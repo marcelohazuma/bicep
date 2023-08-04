@@ -11,5 +11,10 @@ namespace Bicep.Core.Registry
 {
     public interface IModuleRegistry : IArtifactRegistry
     {
+                /// <summary>
+        /// Returns the source code for the module, if available
+        /// </summary>
+        /// <param name="moduleReference">The module reference</param>
+        SourceArchive? TryGetSources(ArtifactReference moduleReference);
     }
 }

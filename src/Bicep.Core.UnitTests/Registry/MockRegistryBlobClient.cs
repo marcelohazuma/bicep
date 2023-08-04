@@ -24,13 +24,8 @@ namespace Bicep.Core.UnitTests.Registry
     /// <summary>
     /// Mock OCI registry blob client. This client is intended to represent a single repository within a specific registry Uri.
     /// </summary>
-    public class MockRegistryBlobClient : ContainerRegistryContentClient
+    public class MockRegistryBlobClient : IOciRegistryContentClient
     {
-        public MockRegistryBlobClient() : base()
-        {
-            // ensure we call the base parameterless constructor to prevent outgoing calls
-        }
-
         // maps digest to blob bytes
         public ConcurrentDictionary<string, TextByteArray> Blobs { get; } = new();
 
@@ -48,6 +43,14 @@ namespace Bicep.Core.UnitTests.Registry
             .Where(kvp => kvp.Value.ArtifactType == BicepMediaTypes.BicepModuleArtifactType)
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
+/*asdfg?
+        public IDictionary<string, OciManifest> SourceManifestObjects =>
+            ManifestObjects
+            .Where(kvp => kvp.Value.ArtifactType == BicepMediaTypes.BicepSourceArtifactType)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+*/
+
         public override async Task<Response<DownloadRegistryBlobResult>> DownloadBlobContentAsync(string digest, CancellationToken cancellationToken = default)
         {
             await Task.Yield();
@@ -60,7 +63,7 @@ namespace Bicep.Core.UnitTests.Registry
             return CreateResult(ContainerRegistryModelFactory.DownloadRegistryBlobResult(digest, BinaryData.FromBytes(bytes.ToArray())));
         }
 
-        public override async Task<Response<GetManifestResult>> GetManifestAsync(string tagOrDigest, CancellationToken cancellationToken = default)
+        public async Task<Response<GetManifestResult>> GetManifestAsync(string tagOrDigest, CancellationToken cancellationToken = default)
         {
             await Task.Yield();
 
@@ -86,7 +89,7 @@ namespace Bicep.Core.UnitTests.Registry
                 manifest: BinaryData.FromBytes(bytes.ToArray())));
         }
 
-        public override async Task<Response<UploadRegistryBlobResult>> UploadBlobAsync(Stream stream, CancellationToken cancellationToken = default)
+        public async Task<Response<UploadRegistryBlobResult>> UploadBlobAsync(Stream stream, CancellationToken cancellationToken = default)
         {
             await Task.Yield();
 
@@ -96,7 +99,7 @@ namespace Bicep.Core.UnitTests.Registry
             return CreateResult(ContainerRegistryModelFactory.UploadRegistryBlobResult(digest, copy.Length));
         }
 
-        public override async Task<Response<SetManifestResult>> SetManifestAsync(BinaryData manifest, string? tag = default, ManifestMediaType? mediaType = default, CancellationToken cancellationToken = default)
+        public async Task<Response<SetManifestResult>> SetManifestAsync(BinaryData manifest, string? tag = default, ManifestMediaType? mediaType = default, CancellationToken cancellationToken = default)
         {
             await Task.Yield();
 
@@ -137,6 +140,33 @@ namespace Bicep.Core.UnitTests.Registry
             result.Setup(m => m.GetRawResponse()).Returns(response.Object);
 
             return result.Object;
+        }
+
+        public async Task<IEnumerable<(string artifactType, string digest)>> GetReferrersAsync(string mainManifestDigest)
+        {
+            await Task.Delay(1);
+
+            var mainManifest = await GetManifestAsync(mainManifestDigest);
+            if (mainManifest.Value is null)
+            {
+                return Enumerable.Empty<(string artifactType, string digest)>();
+            }
+
+            var referringManifestDigests = (await Manifests.SelectConcurrently(async m =>
+            {
+                var manifest = await GetManifestAsync(m.Key);
+                if (Manifests.TryGetValue(m.Key, out var bytes))
+                {
+                    var manifestObject = OciSerialization.Deserialize<OciManifest>(bytes.ToStream());
+                    return (manifestObject.ArtifactType ?? string.Empty, manifestObject.Subject?.Digest ?? string.Empty);
+                }
+
+                return (string.Empty, string.Empty);
+            },
+            int.MaxValue))
+                .Where(item => !string.IsNullOrWhiteSpace(item.Item1) && !string.IsNullOrWhiteSpace(item.Item2));
+
+            return referringManifestDigests;
         }
     }
 }
