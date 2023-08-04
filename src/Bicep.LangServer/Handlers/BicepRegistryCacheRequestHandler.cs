@@ -74,12 +74,11 @@ namespace Bicep.LanguageServer.Handlers
                     $"Unable to obtain the entry point URI for module '{moduleReference.FullyQualifiedReference}'.");
             }
 
-            var featureProvider = featureProviderFactory.GetFeatureProvider(parentBicepUri);
-            if (featureProvider.PublishSourceEnabled && moduleDispatcher.TryGetModuleSources(moduleReference, out var sourceArchive))
+            if (moduleDispatcher.TryGetModuleSources(moduleReference, out var sourceArchive))
             {
                 using var sources = sourceArchive;
 
-                // TODO: For now, we just proffer the main file
+                // TODO: For now, we just proffer the main source file
                 var entrypointFile = sources.GetSourceFiles().Single(f => f.Metadata.Path == sourceArchive.GetEntrypointPath());
                 return Task.FromResult(new BicepRegistryCacheResponse(entrypointFile.Contents));
             }
